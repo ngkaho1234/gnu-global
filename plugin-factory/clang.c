@@ -38,50 +38,81 @@
 
 #include "parser.h"
 
+/*
+ * Structure to hold arguments passing to visit_children()
+ */
 struct visitor_args {
+	/* FILE handle to source file */
 	FILE				*srcfilefp;
+
+	/* Parser parameter from global */
 	const struct parser_param	*param;
 };
 
+/*
+ * Free the line buffer returned by getline()
+ */
 static void
-free_line_buf(char *linebuf)
+free_line_buf(char *linebuf)	/* Line buffer */
 {
 	free(linebuf);
 }
 
+/*
+ * Read #line-th line from @srcfilefp
+ *
+ * Return number of bytes read, address to line buffer
+ * and size of line buffer.
+ */
 static ssize_t
 read_line_no(
-	FILE		*srcfilefp,
-	unsigned int	line,
-	char		**linep,
-	size_t		*lenp)
+	FILE		*srcfilefp,	/* FILE handle */
+	unsigned int	line,		/* line number to be read */
+	char		**linebufp,	/* line buffer returned */
+	size_t		*linebuflenp)	/* line buffer size returned */
 {
 	unsigned int	i;
-	ssize_t		nread = 0;
+	ssize_t		ret = 0;
 
 	assert(line);
 
 	rewind(srcfilefp);
 	for (i = 0; i < line; ++i) {
-		nread = getline(linep, lenp, srcfilefp);
-		if (nread <= 0)
+		/*
+		 * getline() may reallocate a larger buffer
+		 * to hold more content.
+		 */
+		ret = getline(linebufp, linebuflenp, srcfilefp);
+		if (ret <= 0)
 			break;
 	}
 
-	return nread;
+	return ret;
 }
 
+/*
+ * Check if the cursor points to a definition
+ */
 static int
-is_definition(CXCursor cursor)
+is_definition(CXCursor cursor)	/* Cursor */
 {
 	return clang_isCursorDefinition(cursor);
 }
 
+/*
+ * AST walker routine
+ *
+ * If we found definition and reference tags, we pass
+ * them to Global.
+ *
+ * Return CXChildVisit_Break if we fail somewhere,
+ * otherwise CXChildVisit_Recurse.
+ */
 enum CXChildVisitResult
 visit_children(
-	CXCursor	cursor,
-	CXCursor	parent,
-	CXClientData	data)
+	CXCursor	cursor,	/* Current cursor */
+	CXCursor	parent,	/* Parent cursor */
+	CXClientData	data)	/* Arguments */
 {
 	CXSourceLocation		loc;
 	CXFile				file;
@@ -98,6 +129,10 @@ visit_children(
 
 	argsp = (const struct visitor_args *)data;
 	param = argsp->param;
+
+	/*
+	 * Get the location @cursor points to
+	 */
 	loc = clang_getCursorLocation(cursor);
 	clang_getSpellingLocation(loc, &file, &line, &column, &offs);
 
@@ -107,6 +142,10 @@ visit_children(
 	pathstr = clang_getCString(pathcxstr);
 	spellstr = clang_getCString(spellcxstr);
 
+	/*
+	 * It is possible that @pathstr and @spellstr
+	 * would be set to NULL.
+	 */
 	if (!pathstr)
 		pathstr = "";
 	if (!spellstr)
@@ -122,6 +161,9 @@ visit_children(
 		size_t	linebuflen = 0;
 		char	*linebuf = NULL;
 
+		/*
+		 * Fetch the required line from the source file
+		 */
 		nread = read_line_no(argsp->srcfilefp,
 				     line,
 				     &linebuf,
@@ -138,6 +180,10 @@ visit_children(
 			line,
 			pathstr,
 			linebuf);
+
+		/*
+		 * Pass the tag information we gathered to Global
+		 */
 		param->put(PARSER_DEF,
 			   spellstr,
 			   line,
@@ -154,8 +200,14 @@ out:
 	return CXChildVisit_Recurse;
 }
 
+/*
+ * Main parser plugin routine
+ *
+ * This routine passes definition tags and reference tags
+ * to Global at once when these tags are discovered.
+ */
 void
-parser(const struct parser_param *param)
+parser(const struct parser_param *param)	/* Parser parameters */
 {
 	CXIndex			cxindex;
 	CXTranslationUnit	tu;
@@ -173,18 +225,26 @@ parser(const struct parser_param *param)
 	if (!tu)
 		return;
 
+	/*
+	 * If we cannot open the source file, there is nothing
+	 * we can do. Just bail out in this case.
+	 */
 	visitargs.srcfilefp = fopen(param->file, "r");
 	if (!visitargs.srcfilefp)
 		goto out;
 	visitargs.param = param;
 
+	/*
+	 * Now we start to walk the AST tree return by libclang,
+	 * and pass the definition and reference tags to Global
+	 * once we found them.
+	 */
 	clang_visitChildren(clang_getTranslationUnitCursor(tu),
 			    visit_children,
 			    &visitargs);
 
 	fclose(visitargs.srcfilefp);
 out:
-	/* Read output of ctags command. */
 	clang_disposeTranslationUnit(tu);
 	clang_disposeIndex(cxindex);
 }
