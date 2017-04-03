@@ -19,7 +19,6 @@
 #include <config.h>
 #endif
 #include <sys/types.h>
-#include <stdbool.h>
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
@@ -72,7 +71,7 @@ read_line_no(
 	return nread;
 }
 
-static bool
+static int
 is_definition(CXCursor cursor)
 {
 	return clang_isCursorDefinition(cursor);
