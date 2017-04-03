@@ -159,7 +159,7 @@ parser(const struct parser_param *param)
 {
 	CXIndex			cxindex;
 	CXTranslationUnit	tu;
-	struct visitor_args	args;
+	struct visitor_args	visitargs;
 
 	assert(param->size >= sizeof(*param));
 
@@ -173,16 +173,16 @@ parser(const struct parser_param *param)
 	if (!tu)
 		return;
 
-	args.srcfilefp = fopen(param->file, "r");
-	if (!args.srcfilefp)
+	visitargs.srcfilefp = fopen(param->file, "r");
+	if (!visitargs.srcfilefp)
 		goto out;
-	args.param = param;
+	visitargs.param = param;
 
 	clang_visitChildren(clang_getTranslationUnitCursor(tu),
 			    visit_children,
-			    &args);
+			    &visitargs);
 
-	fclose(args.srcfilefp);
+	fclose(visitargs.srcfilefp);
 out:
 	/* Read output of ctags command. */
 	clang_disposeTranslationUnit(tu);
