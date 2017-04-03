@@ -41,7 +41,7 @@
 /*
  * Structure to hold arguments passing to visit_children()
  */
-struct visitor_args {
+struct visit_args {
 	/* FILE handle to source file */
 	FILE				*srcfilefp;
 
@@ -124,10 +124,10 @@ visit_children(
 	CXString			spellcxstr;
 	const char			*pathstr;
 	const char			*spellstr;
-	const struct visitor_args	*argsp;
+	const struct visit_args		*argsp;
 	const struct parser_param	*param;
 
-	argsp = (const struct visitor_args *)data;
+	argsp = (const struct visit_args *)data;
 	param = argsp->param;
 
 	/*
@@ -211,7 +211,7 @@ parser(const struct parser_param *param)	/* Parser parameters */
 {
 	CXIndex			cxindex;
 	CXTranslationUnit	tu;
-	struct visitor_args	visitargs;
+	struct visit_args	visitargs;
 
 	assert(param->size >= sizeof(*param));
 
