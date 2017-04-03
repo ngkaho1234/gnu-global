@@ -15,15 +15,26 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
 #include <sys/types.h>
 #include <stdbool.h>
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
+#ifdef STDC_HEADERS
 #include <stdlib.h>
+#endif
+#ifdef HAVE_STRING_H
 #include <string.h>
+#else
+#include <strings.h>
+#endif
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
 #include <clang-c/Index.h>
 
 #include "parser.h"
