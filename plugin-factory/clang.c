@@ -211,6 +211,17 @@ visit_children(
 		linelen = nread;
 
 		/*
+		 * Remove trailing newline character
+		 */
+		while (nread--) {
+			if (linebuf[nread] != '\r' &&
+			    linebuf[nread] != '\n') {
+				break;
+			}
+			linebuf[nread] = 0;
+		}
+
+		/*
 		 * Pass the tag information we gathered to Global
 		 */
 		if (is_definition(cursor)) {
