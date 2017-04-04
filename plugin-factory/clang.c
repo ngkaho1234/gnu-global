@@ -98,13 +98,19 @@ read_line_no(
 static int
 is_definition(CXCursor cursor)	/* Cursor */
 {
-	return clang_isCursorDefinition(cursor);
+	enum CXCursorKind	cursorkind;
+
+	cursorkind = clang_getCursorKind(cursor);
+	return clang_isCursorDefinition(cursor) &&
+	    cursorkind != CXCursor_CXXAccessSpecifier &&
+	    cursorkind != CXCursor_TemplateTypeParameter &&
+	    cursorkind != CXCursor_UnexposedDecl;
 }
 
 /*
  * AST walker routine
  *
- * If we found definition and reference tags, we pass
+ * If we produce a definition or reference tag, we pass
  * them to Global.
  *
  * Return CXChildVisit_Break if we fail somewhere,
@@ -206,7 +212,8 @@ out:
  * Main parser plugin routine
  *
  * This routine passes definition tags and reference tags
- * to Global at once when these tags are discovered.
+ * to Global at once when cursors representing definitions
+ * or references are discovered.
  */
 void
 parser(const struct parser_param *param)	/* Parser parameters */
@@ -239,7 +246,8 @@ parser(const struct parser_param *param)	/* Parser parameters */
 	/*
 	 * Now we start to walk the AST tree return by libclang,
 	 * and pass the definition and reference tags to Global
-	 * once we found them.
+	 * once we found some cursors representing definitions or
+	 * references.
 	 */
 	clang_visitChildren(clang_getTranslationUnitCursor(tu),
 			    visit_children,
