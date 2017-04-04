@@ -127,10 +127,13 @@ static int
 should_tag(CXCursor cursor)	/* Cursor */
 {
 	enum CXLinkageKind	linkagekind;
+	CXCursor		refcursor;
 
-	linkagekind = clang_getCursorLinkage(cursor);
 	if (!is_definition(cursor) && !is_reference(cursor))
 		return 0;
+
+	refcursor = clang_getCursorReferenced(cursor);
+	linkagekind = clang_getCursorLinkage(refcursor);
 	return linkagekind != CXLinkage_Invalid &&
 	    linkagekind != CXLinkage_NoLinkage;
 }
