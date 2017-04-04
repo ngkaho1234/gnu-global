@@ -93,7 +93,7 @@ read_line_no(
 }
 
 /*
- * Check if the cursor points to a definition
+ * Check if a cursor points to a definition
  */
 static int
 is_definition(CXCursor cursor)	/* Cursor */
@@ -105,6 +105,34 @@ is_definition(CXCursor cursor)	/* Cursor */
 	    cursorkind != CXCursor_CXXAccessSpecifier &&
 	    cursorkind != CXCursor_TemplateTypeParameter &&
 	    cursorkind != CXCursor_UnexposedDecl;
+}
+
+/*
+ * Check if a cursor points to a reference
+ */
+static int
+is_reference(CXCursor cursor)	/* Cursor */
+{
+	enum CXCursorKind	cursorkind;
+
+	cursorkind = clang_getCursorKind(cursor);
+	return cursorkind == CXCursor_DeclRefExpr ||
+	    cursorkind == CXCursor_MemberRefExpr;
+}
+
+/*
+ * Check if a cursor should be tagged
+ */
+static int
+should_tag(CXCursor cursor)	/* Cursor */
+{
+	enum CXLinkageKind	linkagekind;
+
+	linkagekind = clang_getCursorLinkage(cursor);
+	if (!is_definition(cursor) && !is_reference(cursor))
+		return 0;
+	return linkagekind != CXLinkage_Invalid &&
+	    linkagekind != CXLinkage_NoLinkage;
 }
 
 /*
@@ -163,7 +191,7 @@ visit_children(
 		goto out;
 	}
 	
-	if (is_definition(cursor)) {
+	if (should_tag(cursor)) {
 		ssize_t	nread;
 		ssize_t	linelen;
 		size_t	linebuflen = 0;
@@ -182,22 +210,38 @@ visit_children(
 		}
 		linelen = nread;
 
-		fprintf(stderr,
-			"Definition [%s] [%u] [%s] [%s]\n",
-			spellstr,
-			line,
-			pathstr,
-			linebuf);
-
 		/*
 		 * Pass the tag information we gathered to Global
 		 */
-		param->put(PARSER_DEF,
-			   spellstr,
-			   line,
-			   pathstr,
-			   linebuf,
-			   param->arg);
+		if (is_definition(cursor)) {
+			fprintf(stderr,
+				"Definition [%s] [%u] [%s] [%s]\n",
+				spellstr,
+				line,
+				pathstr,
+				linebuf);
+
+			param->put(PARSER_DEF,
+				   spellstr,
+				   line,
+				   pathstr,
+				   linebuf,
+				   param->arg);
+		} else if (is_reference(cursor)) {
+			fprintf(stderr,
+				"Reference [%s] [%u] [%s] [%s]\n",
+				spellstr,
+				line,
+				pathstr,
+				linebuf);
+
+			param->put(PARSER_REF_SYM,
+				   spellstr,
+				   line,
+				   pathstr,
+				   linebuf,
+				   param->arg);
+		}
 
 		free_line_buf(linebuf);
 	}
