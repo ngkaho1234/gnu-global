@@ -449,13 +449,6 @@ visit_children(
 			strbuf_puts(sb, spellstr);
 			fix_tag_semantic_parent(cursor, sb);
 
-			fprintf(stderr,
-				"Definition [%s] [%u] [%s] [%s]\n",
-				strbuf_value(sb),
-				line,
-				pathstr,
-				linebuf);
-
 			param->put(PARSER_DEF,
 				   strbuf_value(sb),
 				   line,
@@ -464,13 +457,6 @@ visit_children(
 				   param->arg);
 		} else if (is_reference(cursor)) {
 			strbuf_puts(sb, spellstr);
-
-			fprintf(stderr,
-				"Reference [%s] [%u] [%s] [%s]\n",
-				strbuf_value(sb),
-				line,
-				pathstr,
-				linebuf);
 
 			param->put(PARSER_REF_SYM,
 				   strbuf_value(sb),
