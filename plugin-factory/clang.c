@@ -61,7 +61,7 @@ struct strbuf_s {
 /*
  * Expand buffer so that afford to the length data at least
  */
-static int			/* positive when success, -1 when short of memory */
+static int			/* positive for success, -1 for failure */
 strbuf_expandbuf(
 	struct strbuf_s	*sb,	/* strbuf_s structure */
 	int		nslen)	/* new string length */
@@ -134,26 +134,32 @@ strbuf_value(struct strbuf_s *sb)	/* strbuf_s structure */
 /*
  * Put string
  */
-static void
+static int			/* 0 for success, -1 for failure */
 strbuf_puts(
 	struct strbuf_s	*sb,	/* strbuf_s structure */
 	const char	*s)	/* string */
 {
 	char	*p;
 
-	p = sb->sbuf;
-	strbuf_expandbuf(sb, strlen(s));
+	/*
+	 * Make sure that we got enought space to hold the content
+	 */
+	if (strbuf_expandbuf(sb, strlen(s)) < 0)
+		return -1;
 
+	p = sb->sbuf;
 	while (*s) {
 		*p++ = *s++;
 	}
 	*p = 0;
+
+	return 0;
 }
 
 /*
  * Do sprintf into string buffer
  */
-static int
+static int			/* non-negative for success, -1 for failure */
 strbuf_sprintf(
 	struct strbuf_s	*sb,	/* strbuf_s structure */
 	const char	*fmt,	/* format string */
@@ -274,22 +280,27 @@ should_tag(CXCursor cursor)	/* Cursor */
 /*
  * Prepend semantic parent to the content of a string buffer
  */
-static void
+static int				/* 0 for success, -1 for failure */
 prepend_semantic_parent(
 	struct strbuf_s	*sb,		/* Cursor */
 	const char	*spspelling)	/* Spelling of semantic parent */
 {
 	char	*tsbuf;
 	int	tslen;
+	int	ret = 0;
 
 	tslen = strlen(strbuf_value(sb));
 	tsbuf = malloc(tslen + 1);
+	if (!tsbuf)
+		return -1;
 	tsbuf[tslen] = 0;
 
 	memcpy(tsbuf, strbuf_value(sb), tslen);
-	strbuf_sprintf(sb, "%s::%s", spspelling, tsbuf);
+	if (strbuf_sprintf(sb, "%s::%s", spspelling, tsbuf) < 0)
+		ret = -1;
 
 	free(tsbuf);
+	return ret;
 }
 
 /*
@@ -314,11 +325,12 @@ is_named_scope(CXCursor cursor)	/* Cursor */
  * Prepend spelling of each semantic parents of a cursor
  * to a string buffer
  */
-static void
+static int			/* 0 for success, -1 for failure */
 fix_tag_semantic_parent(
 	CXCursor	cursor,
 	struct strbuf_s	*sb)
 {
+	int		ret = 0;
 	CXCursor	spcursor;
 
 	spcursor = clang_getCursorSemanticParent(cursor);
@@ -334,9 +346,10 @@ fix_tag_semantic_parent(
 		if (!spspelling)
 			spspelling = "";
 
-		prepend_semantic_parent(sb, spspelling);
-
+		ret = prepend_semantic_parent(sb, spspelling);
 		clang_disposeString(spspellingstr);
+		if (ret < 0)
+			break;
 
 		/*
 		 * Find into the semantic parent even further if viable
@@ -346,6 +359,8 @@ fix_tag_semantic_parent(
 			break;
 		spcursor = nspcursor;
 	}
+
+	return ret;
 }
 
 /*
@@ -375,9 +390,11 @@ visit_children(
 	const char			*spellstr;
 	const struct visit_args		*argsp;
 	const struct parser_param	*param;
+	enum CXChildVisitResult		ret;
 
 	argsp = (const struct visit_args *)data;
 	param = argsp->param;
+	ret = CXChildVisit_Recurse;
 
 	/*
 	 * Get the location @cursor points to
@@ -409,7 +426,7 @@ visit_children(
 		ssize_t		linelen;
 		size_t		linebuflen = 0;
 		char		*linebuf = NULL;
-		struct strbuf_s	*sb;
+		struct strbuf_s	*sb = NULL;
 
 		/*
 		 * Fetch the required line from the source file
@@ -419,10 +436,16 @@ visit_children(
 				     &linebuf,
 				     &linebuflen);
 		if (nread <= 0) {
-			free_line_buf(linebuf);
-			goto out;
+			ret = CXChildVisit_Break;
+			goto cleanup;
 		}
 		linelen = nread;
+
+		sb = strbuf_open(0);
+		if (!sb) {
+			ret = CXChildVisit_Break;
+			goto cleanup;
+		}
 
 		/*
 		 * Remove trailing newline character
@@ -435,19 +458,19 @@ visit_children(
 			linebuf[nread] = 0;
 		}
 
-		sb = strbuf_open(0);
-		if (!sb) {
-			free_line_buf(linebuf);
-			goto out;
-		}
-
 
 		/*
 		 * Pass the tag information we gathered to Global
 		 */
 		if (is_definition(cursor)) {
-			strbuf_puts(sb, spellstr);
-			fix_tag_semantic_parent(cursor, sb);
+			if (strbuf_puts(sb, spellstr) < 0) {
+				ret = CXChildVisit_Break;
+				goto cleanup;
+			}
+			if (fix_tag_semantic_parent(cursor, sb) < 0) {
+				ret = CXChildVisit_Break;
+				goto cleanup;
+			}
 
 			param->put(PARSER_DEF,
 				   strbuf_value(sb),
@@ -456,7 +479,10 @@ visit_children(
 				   linebuf,
 				   param->arg);
 		} else if (is_reference(cursor)) {
-			strbuf_puts(sb, spellstr);
+			if (strbuf_puts(sb, spellstr) < 0) {
+				ret = CXChildVisit_Break;
+				goto cleanup;
+			}
 
 			param->put(PARSER_REF_SYM,
 				   strbuf_value(sb),
@@ -466,14 +492,16 @@ visit_children(
 				   param->arg);
 		}
 
-		strbuf_close(sb);
+cleanup:
+		if (sb)
+			strbuf_close(sb);
 		free_line_buf(linebuf);
 	}
 
 out:
 	clang_disposeString(pathcxstr);
 	clang_disposeString(spellcxstr);
-	return CXChildVisit_Recurse;
+	return ret;
 }
 
 /*
