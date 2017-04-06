@@ -51,8 +51,14 @@ struct visit_args {
 	const struct parser_param	*param;
 };
 
+/*
+ * Buffer to store string
+ */
 struct strbuf_s {
+	/* string buffer */
 	char	*sbuf;
+
+	/* allocated size of the buffer */
 	int	sbufsize;
 };
 #define STRBUF_INITIALSIZE 80
@@ -69,6 +75,10 @@ strbuf_expandbuf(
 	char	*nsbuf;
 	int	nbufsize = nslen + 1;	/* To hold \0 */
 
+	/*
+	 * No need to enlarge the buffer if it is already
+	 * sufficiently large
+	 */
 	if (sb->sbufsize >= nbufsize)
 		return sb->sbufsize;
 
@@ -92,6 +102,10 @@ strbuf_open(int init)		/* initial buffer size */
 	char		*sbuf;
 	int		sbufsize;
 
+	/*
+	 * Certain size of space will be pre-allocated if
+	 * @init is not specified
+	 */
 	sbufsize = (init > 0) ? init : STRBUF_INITIALSIZE;
 	sb = (struct strbuf_s *)calloc(sizeof(struct strbuf_s), 1);
 	if (!sb)
@@ -126,6 +140,10 @@ strbuf_value(struct strbuf_s *sb)	/* strbuf_s structure */
 {
 	int	endoffs;
 
+	/*
+	 * Set the last byte of the buffer to 0x0 to make it the
+	 * the boundary of the buffer
+	 */
 	endoffs = sb->sbufsize - 1;
 	sb->sbuf[endoffs] = 0;
 	return sb->sbuf;
@@ -143,6 +161,7 @@ strbuf_puts(
 
 	/*
 	 * Make sure that we got enought space to hold the content
+	 * including \0
 	 */
 	if (strbuf_expandbuf(sb, strlen(s)) < 0)
 		return -1;
@@ -176,6 +195,10 @@ strbuf_sprintf(
 	if (ret < 0)
 		goto out;
 
+	/*
+	 * Make sure that we got enought space to hold the content
+	 * including \0
+	 */
 	ret = sbufsize = strbuf_expandbuf(sb, slen);
 	if (ret < 0)
 		goto out;
