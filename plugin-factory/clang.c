@@ -221,32 +221,31 @@ free_line_buf(char *linebuf)	/* Line buffer */
 }
 
 /*
- * Read #line-th line from @srcfilefp
+ * Read file data from @srcfilefp
  *
- * Return number of bytes read, address to line buffer
- * and size of line buffer.
+ * Return number of bytes read if successful,
+ * otherwise -1.
  */
 static ssize_t
-read_line_no(
+read_file_data(
 	FILE		*srcfilefp,	/* FILE handle */
-	unsigned int	line,		/* line number to be read */
-	char		**linebufp,	/* line buffer returned */
-	size_t		*linebuflenp)	/* line buffer size returned */
+	off_t		startoffs,	/* Start offset to read from */
+	size_t		len,		/* Size to be read */
+	char		*buf)		/* buffer */
 {
-	unsigned int	i;
 	ssize_t		ret = 0;
 
-	assert(line);
+	/*
+	 * Seek to the start offset of data to be read
+	 */
+	ret = fseeko(srcfilefp, startoffs, SEEK_SET);
+	if (ret < 0)
+		return -1;
 
-	rewind(srcfilefp);
-	for (i = 0; i < line; ++i) {
-		/*
-		 * getline() may reallocate a larger buffer
-		 * to hold more content.
-		 */
-		ret = getline(linebufp, linebuflenp, srcfilefp);
-		if (ret <= 0)
-			break;
+	ret = fread(buf, 1, len, srcfilefp);
+	if (ferror(srcfilefp)) {
+		clearerr(srcfilefp);
+		ret = -1;
 	}
 
 	return ret;
@@ -401,11 +400,14 @@ visit_children(
 	CXCursor	parent,	/* Parent cursor */
 	CXClientData	data)	/* Arguments */
 {
-	CXSourceLocation		loc;
+	CXSourceLocation		startloc;
+	CXSourceLocation		endloc;
+	CXSourceRange			currange;
 	CXFile				file;
 	unsigned int			line;
 	unsigned int			column;
-	unsigned int			offs;
+	unsigned int			startoffs;
+	unsigned int			endoffs;
 	CXString			pathcxstr;
 	CXString			usrcxstr;
 	CXString			spellcxstr;
@@ -422,8 +424,20 @@ visit_children(
 	/*
 	 * Get the location @cursor points to
 	 */
-	loc = clang_getCursorLocation(cursor);
-	clang_getSpellingLocation(loc, &file, &line, &column, &offs);
+	currange = clang_getCursorExtent(cursor);
+	startloc = clang_getRangeStart(currange);
+	endloc = clang_getRangeEnd(currange);
+
+	/*
+	 * If the location of cursor is NULL, we continue to walk
+	 * the AST.
+	 */
+	if (clang_Range_isNull(currange)) {
+		return ret;
+	}
+
+	clang_getFileLocation(startloc, &file, &line, &column, &startoffs);
+	clang_getFileLocation(endloc, NULL, NULL, NULL, &endoffs);
 
 	pathcxstr = clang_getFileName(file);
 	spellcxstr = clang_getCursorSpelling(cursor);
@@ -443,26 +457,36 @@ visit_children(
 	if (strcmp(param->file, pathstr)) {
 		goto out;
 	}
-	
+
 	if (should_tag(cursor)) {
+		size_t		i;
 		ssize_t		nread;
-		ssize_t		linelen;
-		size_t		linebuflen = 0;
+		size_t		linelen;
+		size_t		linebuflen;
 		char		*linebuf = NULL;
 		struct strbuf_s	*sb = NULL;
+
+		linelen = endoffs - startoffs + 1;
+		linebuflen = linelen + 1;	/* Large enough to hold \0 */
+
+		linebuf = (char *)malloc(linebuflen);
+		if (!linebuf) {
+			goto out;
+		}
+		linebuf[linelen] = 0;
 
 		/*
 		 * Fetch the required line from the source file
 		 */
-		nread = read_line_no(argsp->srcfilefp,
-				     line,
-				     &linebuf,
-				     &linebuflen);
-		if (nread <= 0) {
+		nread = read_file_data(argsp->srcfilefp,
+				       startoffs,
+				       linelen,
+				       linebuf);
+		/* Consider the case of premature EOF or read error */
+		if (nread < linelen) {
 			ret = CXChildVisit_Break;
 			goto cleanup;
 		}
-		linelen = nread;
 
 		sb = strbuf_open(0);
 		if (!sb) {
@@ -471,16 +495,19 @@ visit_children(
 		}
 
 		/*
-		 * Remove trailing newline character
+		 * Make sure that we only fetch a line
 		 */
-		while (nread--) {
-			if (linebuf[nread] != '\r' &&
-			    linebuf[nread] != '\n') {
-				break;
+		for (i = 0; i < linelen; i++) {
+			if (linebuf[i] != '\r' &&
+			    linebuf[i] != '\n') {
+				continue;
 			}
-			linebuf[nread] = 0;
+			/*
+			 * Do the truncation
+			 */
+			linebuf[i] = 0;
+			break;
 		}
-
 
 		/*
 		 * Pass the tag information we gathered to Global
