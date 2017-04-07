@@ -60,14 +60,25 @@ struct strbuf_s {
 
 	/* allocated size of the buffer */
 	int	sbufsize;
+
+	/*
+	 * string length
+	 *
+	 * Remark: @slen has to be smaller than @sbufsize
+	 * 	   in order to store an extra \0 right after
+	 * 	   the last byte of the string.
+	 */
+	int	slen;
 };
 #define STRBUF_INITIALSIZE 80
 #define STRBUF_EXPANDSIZE 80
 
 /*
  * Expand buffer so that afford to the length data at least
+ *
+ * Return positive buffer size for success, -1 or 0 for failure.
  */
-static int			/* positive for success, -1 for failure */
+static int
 strbuf_expandbuf(
 	struct strbuf_s	*sb,	/* strbuf_s structure */
 	int		nslen)	/* new string length */
@@ -118,6 +129,7 @@ strbuf_open(int init)		/* initial buffer size */
 
 	sb->sbufsize = sbufsize;
 	sb->sbuf = sbuf;
+	sb->slen = 0;
 
 	return sb;
 }
@@ -141,16 +153,16 @@ strbuf_value(struct strbuf_s *sb)	/* strbuf_s structure */
 	int	endoffs;
 
 	/*
-	 * Set the last byte of the buffer to 0x0 to make it the
-	 * the boundary of the buffer
+	 * Set the first byte right after the last byte of the
+	 * string to 0x0 to mark it the end of string
 	 */
-	endoffs = sb->sbufsize - 1;
+	endoffs = sb->slen;
 	sb->sbuf[endoffs] = 0;
 	return sb->sbuf;
 }
 
 /*
- * Put string
+ * Put string into string buffer
  */
 static int			/* 0 for success, -1 for failure */
 strbuf_puts(
@@ -158,12 +170,15 @@ strbuf_puts(
 	const char	*s)	/* string */
 {
 	char	*p;
+	int	slen;
+
+	slen = strlen(s);
 
 	/*
 	 * Make sure that we got enought space to hold the content
 	 * including \0
 	 */
-	if (strbuf_expandbuf(sb, strlen(s)) < 0)
+	if (strbuf_expandbuf(sb, slen) <= 0)
 		return -1;
 
 	p = sb->sbuf;
@@ -172,6 +187,7 @@ strbuf_puts(
 	}
 	*p = 0;
 
+	sb->slen = slen;
 	return 0;
 }
 
@@ -200,12 +216,14 @@ strbuf_sprintf(
 	 * including \0
 	 */
 	ret = sbufsize = strbuf_expandbuf(sb, slen);
-	if (ret < 0)
+	if (ret <= 0)
 		goto out;
 
 	va_start(ap, fmt);
 	ret = vsnprintf(sb->sbuf, sbufsize, fmt, ap);
 	va_end(ap);
+
+	sb->slen = slen;
 
 out:
 	return ret;
@@ -311,7 +329,7 @@ prepend_semantic_parent(
 	int	tslen;
 	int	ret = 0;
 
-	tslen = strlen(strbuf_value(sb));
+	tslen = sb->slen;
 	tsbuf = malloc(tslen + 1);
 	if (!tsbuf)
 		return -1;
