@@ -365,7 +365,7 @@ is_named_scope(CXCursor cursor)	/* Cursor */
  * Prepend spelling of each semantic parents of a cursor
  * to a string buffer
  */
-static int			/* 0 for success, -1 for failure */
+static int			/* 0 for success, 1 for skipping, -1 for failure */
 fix_tag_semantic_parent(
 	CXCursor	cursor,
 	struct strbuf_s	*sb)
@@ -383,13 +383,16 @@ fix_tag_semantic_parent(
 		spspellingstr = clang_getCursorSpelling(spcursor);
 		spspelling = clang_getCString(spspellingstr);
 
-		if (!spspelling)
-			spspelling = "";
-
-		ret = prepend_semantic_parent(sb, spspelling);
-		clang_disposeString(spspellingstr);
-		if (ret < 0)
+		if (spspelling) {
+			ret = prepend_semantic_parent(sb, spspelling);
+			clang_disposeString(spspellingstr);
+			if (ret < 0)
+				break;
+		} else {
+			ret = 1;
+			clang_disposeString(spspellingstr);
 			break;
+		}
 
 		/*
 		 * Find into the semantic parent even further if viable
@@ -531,12 +534,20 @@ visit_children(
 		 * Pass the tag information we gathered to Global
 		 */
 		if (is_definition(cursor)) {
+			int	rc;
+
 			if (strbuf_puts(sb, spellstr) < 0) {
 				ret = CXChildVisit_Break;
 				goto cleanup;
 			}
-			if (fix_tag_semantic_parent(cursor, sb) < 0) {
+			rc = fix_tag_semantic_parent(cursor, sb);
+			if (rc < 0) {
 				ret = CXChildVisit_Break;
+				goto cleanup;
+			} else if (rc == 1) {
+				/*
+				 * Skip this symbol
+				 */
 				goto cleanup;
 			}
 
