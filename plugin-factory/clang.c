@@ -278,13 +278,13 @@ is_definition(CXCursor cursor)	/* Cursor */
 	enum CXCursorKind	cursorkind;
 
 	cursorkind = clang_getCursorKind(cursor);
-	return (clang_isCursorDefinition(cursor) &&
-	    cursorkind != CXCursor_CXXAccessSpecifier &&
-	    cursorkind != CXCursor_TemplateTypeParameter &&
-	    cursorkind != CXCursor_UnexposedDecl)
-		||
-	    (clang_isDeclaration(cursorkind) &&
-	     cursorkind == CXCursor_VarDecl);
+	if (clang_isCursorDefinition(cursor)) {
+		if (cursorkind != CXCursor_CXXAccessSpecifier &&
+		    cursorkind != CXCursor_TemplateTypeParameter &&
+		    cursorkind != CXCursor_UnexposedDecl)
+			return 1;
+	}
+	return 0;
 }
 
 /*
@@ -314,7 +314,7 @@ should_tag(CXCursor cursor)	/* Cursor */
 	refcursor = clang_getCursorReferenced(cursor);
 	linkagekind = clang_getCursorLinkage(refcursor);
 	return linkagekind != CXLinkage_Invalid &&
-	    linkagekind != CXLinkage_NoLinkage;
+	       linkagekind != CXLinkage_NoLinkage;
 }
 
 /*
@@ -353,12 +353,12 @@ is_named_scope(CXCursor cursor)	/* Cursor */
 
 	cursorkind = clang_getCursorKind(cursor);
 	return cursorkind == CXCursor_Namespace ||
-	    cursorkind == CXCursor_StructDecl ||
-	    cursorkind == CXCursor_UnionDecl ||
-	    cursorkind == CXCursor_EnumDecl ||
-	    cursorkind == CXCursor_ClassDecl ||
-	    cursorkind == CXCursor_ClassTemplate ||
-	    cursorkind == CXCursor_ClassTemplatePartialSpecialization;
+	       cursorkind == CXCursor_StructDecl ||
+	       cursorkind == CXCursor_UnionDecl ||
+	       cursorkind == CXCursor_EnumDecl ||
+	       cursorkind == CXCursor_ClassDecl ||
+	       cursorkind == CXCursor_ClassTemplate ||
+	       cursorkind == CXCursor_ClassTemplatePartialSpecialization;
 }
 
 /*
