@@ -37,6 +37,7 @@
 #include <unistd.h>
 #endif
 #include <clang-c/Index.h>
+#include <leveldb/c.h>
 
 #include "parser.h"
 
@@ -593,13 +594,43 @@ out:
 void
 parser(const struct parser_param *param)	/* Parser parameters */
 {
-	CXIndex			cxindex;
-	CXTranslationUnit	tu;
+	CXIndex			cxindex = NULL;
+	CXTranslationUnit	tu = NULL;
+	leveldb_t		*cpdb = NULL;
+	char			*cpoptions = NULL;
+	const char		*cpdbpath;
 	struct visit_args	visitargs;
 
 	assert(param->size >= sizeof(*param));
 
+	cpdbpath = getenv("CPDB_PATH");
+	if (cpdbpath) {
+		char			*errptr;
+		leveldb_options_t	*options;
+
+		options = leveldb_options_create();
+		if (!options) {
+			param->warning("Insufficient memory creating leveldb options");
+			goto out;
+		}
+
+		cpdb = leveldb_open(options,
+				    cpdbpath,
+				    &errptr);
+
+		leveldb_options_destroy(options);
+
+		if (errptr) {
+			param->warning("Failed to open database: %s", errptr);
+			leveldb_free(errptr);
+			cpdb = NULL;
+			goto out;
+		}
+	}
 	cxindex = clang_createIndex(0, 0);
+	if (!cxindex)
+		goto out;
+
 	tu = clang_createTranslationUnitFromSourceFile(cxindex,
 						       param->file,
 						       0,
@@ -607,7 +638,7 @@ parser(const struct parser_param *param)	/* Parser parameters */
 						       0,
 						       NULL);
 	if (!tu)
-		return;
+		goto out;
 
 	/*
 	 * If we cannot open the source file, there is nothing
@@ -630,6 +661,14 @@ parser(const struct parser_param *param)	/* Parser parameters */
 
 	fclose(visitargs.srcfilefp);
 out:
-	clang_disposeTranslationUnit(tu);
-	clang_disposeIndex(cxindex);
+	if (tu)
+		clang_disposeTranslationUnit(tu);
+	if (cxindex)
+		clang_disposeIndex(cxindex);
+	if (cpdb)
+		leveldb_close(cpdb);
+	if (cpoptions)
+		free(cpoptions);
 }
+
+/* vim: set noexpandtab ts=8 sw=8 :*/

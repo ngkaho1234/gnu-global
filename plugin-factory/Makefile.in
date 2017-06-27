@@ -416,7 +416,7 @@ plugin_LTLIBRARIES = \
 
 # Clang parser
 clang_la_SOURCES = clang.c
-clang_la_LDFLAGS = -module -avoid-version -no-undefined -lclang
+clang_la_LDFLAGS = -module -avoid-version -no-undefined -lclang -lleveldb
 # Exuberant Ctags parser
 exuberant_ctags_la_SOURCES = exuberant-ctags.c
 exuberant_ctags_la_LDFLAGS = -module -avoid-version -no-undefined
